@@ -1,6 +1,4 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 const { getDb } = require('../db/database');
 
 const router = express.Router();
@@ -26,21 +24,31 @@ router.get('/', (req, res) => {
     SELECT protocol, COUNT(*) as count FROM active_sessions GROUP BY protocol
   `).all();
 
-  // Read recent events from log file
-  const logFile = path.join(__dirname, '../../data/logs/tunnel.log');
-  let recentEvents = [];
-  try {
-    if (fs.existsSync(logFile)) {
-      const content = fs.readFileSync(logFile, 'utf8');
-      recentEvents = content.split('\n').filter(Boolean).reverse().slice(0, 10).map(line => {
-        const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+\[(\w+)\]\s+(.+)/);
-        if (match) return { timestamp: match[1], level: match[2].toLowerCase(), category: '-', message: match[3] };
-        return { timestamp: '', level: 'info', category: '-', message: line };
-      });
-    }
-  } catch {}
+  // Recent VPN events dari DB
+  const active = db.prepare(`
+    SELECT username, 'connect' as event, assigned_ip, connected_at as time
+    FROM active_sessions ORDER BY connected_at DESC LIMIT 5
+  `).all();
+  const completed = db.prepare(`
+    SELECT username, 'disconnect' as event, assigned_ip, disconnected_at as time
+    FROM sessions_log ORDER BY disconnected_at DESC LIMIT 5
+  `).all();
 
-  res.render('dashboard', { stats: { totalUsers, activeUsers, enabledUsers, ...bwStats, ...totalBw }, protocols, recentEvents });
+  const merged = [...active, ...completed]
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .slice(0, 10)
+    .map(e => ({
+      message: `${e.username} ${e.event === 'connect' ? 'terkoneksi' : 'terputus'} (${e.assigned_ip || ''})`,
+      level: e.event === 'connect' ? 'info' : 'warn',
+      timestamp: e.time,
+      category: 'vpn',
+    }));
+
+  res.render('dashboard', {
+    stats: { totalUsers, activeUsers, enabledUsers, ...bwStats, ...totalBw },
+    protocols,
+    recentEvents: merged,
+  });
 });
 
 router.get('/api/stats', (req, res) => {

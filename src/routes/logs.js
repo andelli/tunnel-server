@@ -9,16 +9,23 @@ router.get('/', (req, res) => {
   const limit = 50;
   const offset = (page - 1) * limit;
 
-  let query = 'SELECT * FROM sessions_log';
-  let countQuery = 'SELECT COUNT(*) as count FROM sessions_log';
+  // Session history (disconnected)
+  const logs = db.prepare(`
+    SELECT *, 'completed' as status FROM sessions_log
+    ORDER BY id DESC LIMIT ? OFFSET ?
+  `).all(limit, offset);
+  const totalLogs = db.prepare('SELECT COUNT(*) as count FROM sessions_log').get().count;
 
-  query += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+  // Active sessions
+  const active = db.prepare(`
+    SELECT id, username, client_ip, assigned_ip, connected_at as connected_at,
+           NULL as disconnected_at, bytes_sent, bytes_recv, 'active' as status
+    FROM active_sessions
+  `).all();
 
-  const logs = db.prepare(query).all(limit, offset);
-  const totalLogs = db.prepare(countQuery).get().count;
   const totalPages = Math.ceil(totalLogs / limit) || 1;
 
-  res.render('logs', { logs, page, totalPages, totalLogs });
+  res.render('logs', { logs, active, page, totalPages, totalLogs });
 });
 
 module.exports = router;

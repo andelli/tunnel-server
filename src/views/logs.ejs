@@ -6,7 +6,31 @@
   </div>
 </div>
 
+<% if (active.length > 0) { %>
 <div class="card">
+  <h3>Active Sessions</h3>
+  <table class="table">
+    <thead>
+      <tr><th>User</th><th>Client IP</th><th>Assigned IP</th><th>Connected</th><th>⬆</th><th>⬇</th></tr>
+    </thead>
+    <tbody>
+      <% active.forEach(l => { %>
+        <tr>
+          <td><strong><%= l.username %></strong></td>
+          <td><%= l.client_ip || '-' %></td>
+          <td><code><%= l.assigned_ip || '-' %></code></td>
+          <td><%= l.connected_at %></td>
+          <td><%= (l.bytes_sent / 1024 / 1024).toFixed(2) %> MB</td>
+          <td><%= (l.bytes_recv / 1024 / 1024).toFixed(2) %> MB</td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<div class="card">
+  <h3>Session History</h3>
   <table class="table">
     <thead>
       <tr>
@@ -22,7 +46,7 @@
     </thead>
     <tbody>
       <% if (logs.length === 0) { %>
-        <tr><td colspan="8" class="text-muted">No session logs yet</td></tr>
+        <tr><td colspan="8" class="text-muted">Belum ada riwayat session</td></tr>
       <% } %>
       <% logs.forEach(l => { %>
         <tr>
@@ -33,9 +57,7 @@
           <td>
             <% if (l.disconnected_at) { %>
               <%= Math.round((new Date(l.disconnected_at) - new Date(l.connected_at)) / 60000) %> min
-            <% } else { %>
-              -
-            <% } %>
+            <% } else { %>-<% } %>
           </td>
           <td><%= (l.bytes_sent / 1024 / 1024).toFixed(2) %> MB</td>
           <td><%= (l.bytes_recv / 1024 / 1024).toFixed(2) %> MB</td>
