@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { getDb } = require('../db/database');
 const logger = require('../utils/logger');
-const { generateWireGuardKeyPair, generatePresharedKey, getNextIp, generatePassword } = require('../utils/crypto');
+const { generateWireGuardKeyPair, generatePresharedKey, getNextIp } = require('../utils/crypto');
 const wgService = require('../services/wireguard');
 
 const router = express.Router();
@@ -30,7 +30,7 @@ router.get('/new', (req, res) => {
 
 // Create user
 router.post('/', (req, res) => {
-  const { username, password, notes } = req.body;
+  const { username, notes } = req.body;
   if (!username) {
     return res.render('user-form', { user: null, error: 'Username is required' });
   }
@@ -41,7 +41,6 @@ router.post('/', (req, res) => {
     return res.render('user-form', { user: null, error: 'Username already exists' });
   }
 
-  const userPassword = password || generatePassword();
   const usedIps = db.prepare("SELECT wg_address FROM vpn_users WHERE wg_address IS NOT NULL").all().map(r => r.wg_address);
   const wgSubnet = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_subnet'").get()?.value || '10.0.0.0/24';
   const wgIp = getNextIp(wgSubnet, usedIps);
@@ -50,9 +49,9 @@ router.post('/', (req, res) => {
   const wgPsk = generatePresharedKey();
 
   const result = db.prepare(`
-    INSERT INTO vpn_users (username, password, notes, wg_private_key, wg_public_key, wg_preshared_key, wg_address)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(username, userPassword, notes || null, wgKeys.privateKey, wgKeys.publicKey, wgPsk, wgIp);
+    INSERT INTO vpn_users (username, notes, wg_private_key, wg_public_key, wg_preshared_key, wg_address)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(username, notes || null, wgKeys.privateKey, wgKeys.publicKey, wgPsk, wgIp);
 
   logger.info(`VPN user created: ${username}`, { id: result.lastInsertRowid, ip: wgIp });
 
@@ -79,13 +78,12 @@ router.post('/:id', (req, res) => {
   const user = db.prepare('SELECT * FROM vpn_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).send('User not found');
 
-  const { password, notes, enabled } = req.body;
+  const { notes, enabled } = req.body;
 
   db.prepare(`
-    UPDATE vpn_users SET password = COALESCE(NULLIF(?, ''), password),
-      notes = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+    UPDATE vpn_users SET notes = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(password || null, notes || null, enabled !== '0' ? 1 : 0, req.params.id);
+  `).run(notes || null, enabled !== '0' ? 1 : 0, req.params.id);
 
   try {
     if (enabled !== '0') {
