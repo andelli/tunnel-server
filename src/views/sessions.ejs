@@ -9,32 +9,30 @@
     <thead>
       <tr>
         <th>Username</th>
-        <th>Protocol</th>
         <th>Client IP</th>
         <th>Assigned IP</th>
         <th>Connected</th>
         <th>Last Seen</th>
-        <th>Down ↑</th>
-        <th>Down ↓</th>
+        <th>⬆ Sent</th>
+        <th>⬇ Received</th>
         <th>Action</th>
       </tr>
     </thead>
     <tbody>
       <% if (sessions.length === 0) { %>
-        <tr><td colspan="9" class="text-center text-muted">No active sessions</td></tr>
+        <tr><td colspan="8" class="text-center text-muted">No active sessions</td></tr>
       <% } %>
       <% sessions.forEach(s => { %>
         <tr>
           <td><strong><%= s.username %></strong></td>
-          <td><span class="proto-badge <%= s.protocol %>"><%= s.protocol %></span></td>
           <td><%= s.client_ip || '-' %></td>
           <td><code><%= s.assigned_ip || '-' %></code></td>
           <td><%= s.connected_at %></td>
           <td><%= s.last_seen %></td>
-          <td><%= (s.bytes_sent / 1024).toFixed(1) %> KB</td>
-          <td><%= (s.bytes_recv / 1024).toFixed(1) %> KB</td>
+          <td><%= (s.bytes_sent / 1024 / 1024).toFixed(2) %> MB</td>
+          <td><%= (s.bytes_recv / 1024 / 1024).toFixed(2) %> MB</td>
           <td>
-            <form method="POST" action="/sessions/<%= s.id %>/kill" onsubmit="return confirm('Kill session?')">
+            <form method="POST" action="/sessions/<%= s.id %>/kill" onsubmit="return confirm('Kill this session?')">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
               <button type="submit" class="btn-sm btn-danger">Disconnect</button>
             </form>
@@ -45,6 +43,4 @@
   </table>
 </div>
 
-<script>
-setTimeout(() => location.reload(), 15000);
-</script>
+<script>setTimeout(() => location.reload(), 15000);</script>

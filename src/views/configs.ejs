@@ -21,35 +21,8 @@
       <input type="number" id="wg_port" name="wg_port" value="<%= config.wg_port || '51820' %>">
     </div>
     <div class="form-group">
-      <label for="wg_subnet">Subnet</label>
+      <label for="wg_subnet">Tunnel Subnet</label>
       <input type="text" id="wg_subnet" name="wg_subnet" value="<%= config.wg_subnet || '10.0.0.0/24' %>">
-    </div>
-
-    <h3>OpenVPN</h3>
-    <div class="form-group">
-      <label for="ovpn_port">Listen Port</label>
-      <input type="number" id="ovpn_port" name="ovpn_port" value="<%= config.ovpn_port || '1194' %>">
-    </div>
-    <div class="form-group">
-      <label for="ovpn_proto">Protocol</label>
-      <select id="ovpn_proto" name="ovpn_proto">
-        <option value="udp" <%= config.ovpn_proto === 'udp' ? 'selected' : '' %>>UDP</option>
-        <option value="tcp" <%= config.ovpn_proto === 'tcp' ? 'selected' : '' %>>TCP</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="ovpn_subnet">Subnet</label>
-      <input type="text" id="ovpn_subnet" name="ovpn_subnet" value="<%= config.ovpn_subnet || '10.0.1.0/24' %>">
-    </div>
-
-    <h3>L2TP/IPsec</h3>
-    <div class="form-group">
-      <label for="l2tp_ipsec_psk">IPsec Pre-Shared Key <small>(for Windows)</small></label>
-      <input type="text" id="l2tp_ipsec_psk" name="l2tp_ipsec_psk" value="<%= config.l2tp_ipsec_psk || '' %>">
-    </div>
-    <div class="form-group">
-      <label for="l2tp_subnet">Subnet</label>
-      <input type="text" id="l2tp_subnet" name="l2tp_subnet" value="<%= config.l2tp_subnet || '10.0.2.0/24' %>">
     </div>
 
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -61,33 +34,22 @@
   <h3>Service Control</h3>
   <div class="service-controls">
     <div class="service-control-item">
-      <span>WireGuard</span>
-      <button class="btn-sm" onclick="restartService('wireguard')">Restart</button>
-    </div>
-    <div class="service-control-item">
-      <span>OpenVPN</span>
-      <button class="btn-sm" onclick="restartService('openvpn')">Restart</button>
-    </div>
-    <div class="service-control-item">
-      <span>L2TP/IPsec</span>
-      <button class="btn-sm" onclick="restartService('l2tp')">Restart</button>
+      <span>WireGuard Interface</span>
+      <button class="btn-sm" onclick="restartWG()">Regenerate & Restart</button>
     </div>
   </div>
 </div>
 
 <script>
-async function restartService(protocol) {
-  if (!confirm(`Restart ${protocol} service?`)) return;
+async function restartWG() {
+  if (!confirm('Regenerate WireGuard config and restart interface?')) return;
   try {
-    const res = await fetch('/configs/restart/' + protocol, {
+    const res = await fetch('/configs/restart', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '<%= csrfToken %>' },
-      body: JSON.stringify({})
     });
     const data = await res.json();
-    alert(data.message || (data.success ? `${protocol} restarted` : 'Failed'));
-  } catch(e) {
-    alert('Error: ' + e.message);
-  }
+    alert(data.message || (data.success ? 'Restarted' : 'Failed'));
+  } catch(e) { alert('Error: ' + e.message); }
 }
 </script>

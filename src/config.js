@@ -26,17 +26,6 @@ const config = {
       subnet: process.env.WG_SUBNET || '10.0.0.0/24',
       interface: 'wg0',
     },
-    openvpn: {
-      port: parseInt(process.env.OVPN_PORT || '1194'),
-      subnet: process.env.OVPN_SUBNET || '10.0.1.0/24',
-      proto: process.env.OVPN_PROTO || 'udp',
-      managementPort: 7505,
-    },
-    l2tp: {
-      subnet: process.env.L2TP_SUBNET || '10.0.2.0/24',
-      ipsecPsk: process.env.L2TP_IPSEC_PSK || 'TunnelServerPSK2024',
-      port: 1701,
-    },
   },
 };
 

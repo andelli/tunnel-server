@@ -1,5 +1,4 @@
--- Tunnel Server Database Schema
--- Managed by src/db/init.js and src/db/database.js
+-- Tunnel Server Database Schema — WireGuard Only
 
 CREATE TABLE IF NOT EXISTS admin_users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -15,15 +14,10 @@ CREATE TABLE IF NOT EXISTS vpn_users (
     username        TEXT UNIQUE NOT NULL,
     password        TEXT,
     enabled         INTEGER DEFAULT 1,
-    allowed_ips     TEXT DEFAULT '0.0.0.0/0',
-    wg_enabled      INTEGER DEFAULT 1,
     wg_private_key  TEXT,
     wg_public_key   TEXT,
     wg_preshared_key TEXT,
     wg_address      TEXT,
-    ovpn_enabled    INTEGER DEFAULT 1,
-    ovpn_cert_serial TEXT,
-    l2tp_enabled    INTEGER DEFAULT 1,
     notes           TEXT,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -35,7 +29,7 @@ CREATE TABLE IF NOT EXISTS vpn_users (
 CREATE TABLE IF NOT EXISTS sessions_log (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     username        TEXT NOT NULL,
-    protocol        TEXT NOT NULL,
+    protocol        TEXT NOT NULL DEFAULT 'wireguard',
     client_ip       TEXT,
     assigned_ip     TEXT,
     connected_at    DATETIME,
@@ -48,7 +42,7 @@ CREATE TABLE IF NOT EXISTS sessions_log (
 CREATE TABLE IF NOT EXISTS active_sessions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     username        TEXT NOT NULL,
-    protocol        TEXT NOT NULL,
+    protocol        TEXT NOT NULL DEFAULT 'wireguard',
     client_ip       TEXT,
     assigned_ip     TEXT UNIQUE,
     peer_pubkey     TEXT,
@@ -73,7 +67,5 @@ CREATE TABLE IF NOT EXISTS event_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_log_username ON sessions_log(username);
-CREATE INDEX IF NOT EXISTS idx_sessions_log_protocol ON sessions_log(protocol);
 CREATE INDEX IF NOT EXISTS idx_active_sessions_username ON active_sessions(username);
 CREATE INDEX IF NOT EXISTS idx_event_log_timestamp ON event_log(timestamp);
-CREATE INDEX IF NOT EXISTS idx_event_log_category ON event_log(category);

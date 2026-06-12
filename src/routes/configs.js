@@ -16,11 +16,7 @@ router.get('/', (req, res) => {
 // Update settings
 router.post('/', (req, res) => {
   const db = getDb();
-  const allowed = [
-    'server_public_ip', 'wg_port', 'wg_subnet', 'dns_servers',
-    'ovpn_port', 'ovpn_proto', 'ovpn_subnet',
-    'l2tp_ipsec_psk', 'l2tp_subnet',
-  ];
+  const allowed = ['server_public_ip', 'wg_port', 'wg_subnet', 'dns_servers'];
 
   const upsert = db.prepare(`
     INSERT INTO server_settings (key, value) VALUES (?, ?)
@@ -36,26 +32,18 @@ router.post('/', (req, res) => {
   });
 
   transaction(req.body);
-
   logger.info('Server settings updated');
   res.redirect('/configs');
 });
 
-// Restart VPN service
-router.post('/restart/:protocol', (req, res) => {
-  const { protocol } = req.params;
+// Restart WireGuard
+router.post('/restart', (req, res) => {
   try {
-    if (protocol === 'wireguard') {
-      require('../services/wireguard').restart();
-    } else if (protocol === 'openvpn') {
-      require('../services/openvpn').restart();
-    } else if (protocol === 'l2tp') {
-      require('../services/l2tp').restart();
-    }
-    logger.info(`Service restarted: ${protocol}`);
-    res.json({ success: true, message: `${protocol} restarted` });
+    require('../services/wireguard').restart();
+    logger.info('WireGuard restarted');
+    res.json({ success: true, message: 'WireGuard restarted' });
   } catch (e) {
-    logger.error(`Failed to restart ${protocol}: ${e.message}`);
+    logger.error(`Failed to restart WireGuard: ${e.message}`);
     res.status(500).json({ success: false, error: e.message });
   }
 });

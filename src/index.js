@@ -4,8 +4,6 @@ const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
 const expressLayouts = require('express-ejs-layouts');
 
 const config = require('./config');
@@ -15,7 +13,6 @@ const { requireAuth, csrfProtect, csrfToken } = require('./middlewares/auth');
 const network = require('./utils/network');
 const monitor = require('./services/monitor');
 
-// Uncaught errors
 process.on('uncaughtException', (err) => {
   logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });
 });
@@ -35,7 +32,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// HTTP log
 app.use(morgan('combined', {
   stream: { write: (msg) => logger.info(msg.trim()) },
 }));
@@ -50,8 +46,9 @@ const sessionConfig = {
 
 try {
   const SQLiteStore = require('better-sqlite3-session-store')(session);
+  const db = getDb();
   sessionConfig.store = new SQLiteStore({
-    client: getDb(),
+    client: db,
     expired: { clear: true, intervalMs: 900000 },
   });
 } catch {
@@ -61,7 +58,6 @@ try {
 app.use(session(sessionConfig));
 app.use(csrfToken);
 
-// Rate limit login
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
@@ -78,20 +74,17 @@ app.use('/configs', requireAuth, csrfProtect, require('./routes/configs'));
 app.use('/sessions', requireAuth, require('./routes/sessions'));
 app.use('/logs', requireAuth, require('./routes/logs'));
 
-// 404
 app.use((req, res) => {
   res.status(404).render('login', { layout: false, error: 'Page not found' });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
   logger.error(`Express error: ${err.message}`, { stack: err.stack });
   res.status(500).send('Internal Server Error');
 });
 
-// Init — just DB + network, no VPN service startup
 async function init() {
-  logger.info('=== Tunnel VPN Gateway Dashboard ===');
+  logger.info('=== WireGuard Tunnel Dashboard ===');
   logger.info(`Node.js v${process.version}`);
 
   getDb();

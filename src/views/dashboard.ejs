@@ -20,21 +20,21 @@
     <div class="stat-label">Enabled</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" id="stat-bandwidth"><%= (stats.total_sent / 1024 / 1024).toFixed(1) %> MB</div>
-    <div class="stat-label">Bandwidth (All Time)</div>
+    <div class="stat-value" id="stat-bandwidth"><%= (stats.total_recv_all / 1024 / 1024 / 1024).toFixed(2) %> GB</div>
+    <div class="stat-label">Total Traffic</div>
   </div>
 </div>
 
 <div class="dashboard-grid">
   <div class="card">
-    <h3>Protocol Distribution</h3>
+    <h3>Active Sessions</h3>
     <div class="protocol-list">
       <% if (protocols.length === 0) { %>
         <p class="text-muted">No active sessions</p>
       <% } %>
       <% protocols.forEach(p => { %>
         <div class="protocol-item">
-          <span class="protocol-name"><%= p.protocol %></span>
+          <span class="protocol-name">WireGuard</span>
           <span class="protocol-count"><%= p.count %> online</span>
         </div>
       <% }) %>
@@ -65,14 +65,5 @@
         <span class="event-msg"><%= e.message %></span>
       </div>
     <% }) %>
-  </div>
-</div>
-
-<div class="card">
-  <h3>VPN Services Status</h3>
-  <div class="service-status" id="service-status">
-    <div class="service-item"><span>WireGuard</span><span class="status-check">...</span></div>
-    <div class="service-item"><span>OpenVPN</span><span class="status-check">...</span></div>
-    <div class="service-item"><span>L2TP/IPsec</span><span class="status-check">...</span></div>
   </div>
 </div>

@@ -8,11 +8,9 @@ const network = require('../utils/network');
 
 const WG_DIR = '/etc/wireguard';
 const WG_IFACE = config.vpn.wireguard.interface;
-const CLIENT_DIR = path.join(config.paths.configs, 'wireguard/clients');
 
 function ensureDirs() {
   if (!fs.existsSync(WG_DIR)) fs.mkdirSync(WG_DIR, { recursive: true });
-  if (!fs.existsSync(CLIENT_DIR)) fs.mkdirSync(CLIENT_DIR, { recursive: true });
 }
 
 function isInstalled() {
@@ -30,6 +28,7 @@ function initServer() {
 
   ensureDirs();
   const db = getDb();
+  const mainIface = network.getMainInterface();
 
   // Generate server keys if not exist
   let svrPrivKey = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_server_private_key'").get()?.value;
@@ -42,36 +41,40 @@ function initServer() {
     logger.info(`WireGuard server keys generated. Public key: ${pubKey}`);
   }
 
-  // Save WG port and subnet to settings
-  const svrPubKey = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_server_public_key'").get()?.value;
   db.prepare("INSERT OR REPLACE INTO server_settings (key, value) VALUES ('wg_port', ?)").run(String(config.vpn.wireguard.port));
   db.prepare("INSERT OR REPLACE INTO server_settings (key, value) VALUES ('wg_subnet', ?)").run(config.vpn.wireguard.subnet);
   db.prepare("INSERT OR REPLACE INTO server_settings (key, value) VALUES ('dns_servers', ?)").run(config.vpn.dns.join(', '));
 
-  // Write wg0.conf
+  writeConfig();
+  return true;
+}
+
+function writeConfig() {
+  const db = getDb();
   const mainIface = network.getMainInterface();
-  const confPath = path.join(WG_DIR, `${WG_IFACE}.conf`);
-  const svrIp = config.vpn.wireguard.subnet.split('/')[0].replace(/\.\d+$/, '.1') + '/' + config.vpn.wireguard.subnet.split('/')[1];
+  const svrPrivKey = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_server_private_key'").get()?.value;
+  const wgPort = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_port'").get()?.value || '51820';
+  const wgSubnet = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_subnet'").get()?.value || '10.0.0.0/24';
+  const svrIp = wgSubnet.split('/')[0].replace(/\.\d+$/, '.1') + '/' + wgSubnet.split('/')[1];
+
+  if (!svrPrivKey) return false;
 
   let conf = `[Interface]
 Address = ${svrIp}
 PrivateKey = ${svrPrivKey}
-ListenPort = ${config.vpn.wireguard.port}
+ListenPort = ${wgPort}
 PostUp = iptables -A FORWARD -i ${WG_IFACE} -j ACCEPT; iptables -t nat -A POSTROUTING -o ${mainIface} -j MASQUERADE
 PostDown = iptables -D FORWARD -i ${WG_IFACE} -j ACCEPT; iptables -t nat -D POSTROUTING -o ${mainIface} -j MASQUERADE
 `;
 
-  // Add all enabled users as peers
-  const users = db.prepare('SELECT * FROM vpn_users WHERE enabled = 1 AND wg_enabled = 1').all();
+  const users = db.prepare('SELECT * FROM vpn_users WHERE enabled = 1').all();
   for (const user of users) {
     if (user.wg_public_key && user.wg_address) {
       conf += `\n# ${user.username}\n[Peer]\nPublicKey = ${user.wg_public_key}\nPresharedKey = ${user.wg_preshared_key}\nAllowedIPs = ${user.wg_address}/32\n`;
     }
   }
 
-  fs.writeFileSync(confPath, conf);
-  logger.info(`WireGuard config written: ${confPath}`);
-
+  fs.writeFileSync(path.join(WG_DIR, `${WG_IFACE}.conf`), conf);
   return true;
 }
 
@@ -81,12 +84,8 @@ function start() {
     execSync(`wg-quick up ${WG_IFACE} 2>/dev/null`, { encoding: 'utf8', timeout: 10000 });
     logger.info(`WireGuard ${WG_IFACE} is up`);
   } catch (e) {
-    // Already up or error - try wg show
-    try {
-      execSync(`wg show ${WG_IFACE}`, { encoding: 'utf8', stdio: 'pipe' });
-    } catch {
-      logger.error(`Failed to start WireGuard: ${e.message}`);
-    }
+    try { execSync(`wg show ${WG_IFACE}`, { encoding: 'utf8', stdio: 'pipe' }); }
+    catch { logger.error(`Failed to start WireGuard: ${e.message}`); }
   }
 }
 
@@ -94,49 +93,42 @@ function stop() {
   if (!isInstalled()) return;
   try {
     execSync(`wg-quick down ${WG_IFACE} 2>/dev/null`, { encoding: 'utf8', timeout: 10000 });
-    logger.info(`WireGuard ${WG_IFACE} is down`);
   } catch {}
 }
 
 function restart() {
   stop();
-  initServer();
+  writeConfig();
   start();
 }
 
 function addPeer(username, publicKey, presharedKey, address) {
   if (!isInstalled() || !publicKey || !address) return;
-
   try {
     execSync(`wg set ${WG_IFACE} peer ${publicKey} preshared-key <(echo "${presharedKey}") allowed-ips ${address}/32`, { encoding: 'utf8', timeout: 5000 });
     logger.info(`WireGuard peer added: ${username} (${address})`);
   } catch (e) {
-    logger.warn(`WireGuard add peer (${username}) failed, will be applied on restart: ${e.message}`);
+    logger.warn(`WireGuard add peer (${username}) failed: ${e.message}`);
   }
-
-  // Also update the config file for persistence
-  initServer();
+  writeConfig();
 }
 
 function removePeer(username, publicKey) {
   if (!isInstalled() || !publicKey) return;
-
   try {
     execSync(`wg set ${WG_IFACE} peer ${publicKey} remove`, { encoding: 'utf8', timeout: 5000 });
     logger.info(`WireGuard peer removed: ${username}`);
   } catch (e) {
     logger.warn(`WireGuard remove peer (${username}) failed: ${e.message}`);
   }
-
-  // Update config file
-  initServer();
+  writeConfig();
 }
 
 function getPeers() {
   if (!isInstalled()) return [];
   try {
     const output = execSync(`wg show ${WG_IFACE} dump`, { encoding: 'utf8', timeout: 5000 }).trim();
-    const lines = output.split('\n').slice(1); // Skip first line (server)
+    const lines = output.split('\n').slice(1);
     return lines.map(line => {
       const parts = line.split('\t');
       return {
@@ -149,9 +141,7 @@ function getPeers() {
         transferTx: parseInt(parts[6]) || 0,
       };
     });
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function monitorPeers() {
@@ -163,38 +153,35 @@ function monitorPeers() {
   for (const peer of peers) {
     if (!peer.allowedIps) continue;
     const ip = peer.allowedIps.split('/')[0];
-    const user = db.prepare('SELECT * FROM vpn_users WHERE wg_address = ?').get(ip);
+    const user = db.prepare('SELECT * FROM vpn_users WHERE wg_address = ? OR wg_public_key = ?').get(ip, peer.publicKey);
     if (!user) continue;
 
-    const isActive = (now - peer.latestHandshake) < 180; // 3 min threshold
-    const existing = db.prepare('SELECT * FROM active_sessions WHERE assigned_ip = ? AND protocol = ?').get(ip, 'wireguard');
+    const isActive = (now - peer.latestHandshake) < 180;
+    const existing = db.prepare('SELECT * FROM active_sessions WHERE assigned_ip = ?').get(ip);
 
     if (isActive && !existing) {
       db.prepare(`
-        INSERT INTO active_sessions (username, protocol, client_ip, assigned_ip, peer_pubkey, bytes_sent, bytes_recv, last_seen)
-        VALUES (?, 'wireguard', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO active_sessions (username, client_ip, assigned_ip, peer_pubkey, bytes_sent, bytes_recv, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `).run(user.username, peer.endpoint || '', ip, peer.publicKey, peer.transferRx, peer.transferTx);
       logger.info(`Session started: ${user.username} via WireGuard (${ip})`);
     } else if (isActive && existing) {
       db.prepare(`
-        UPDATE active_sessions SET last_seen = CURRENT_TIMESTAMP,
-          bytes_sent = ?, bytes_recv = ?, client_ip = ?
+        UPDATE active_sessions SET last_seen = CURRENT_TIMESTAMP, bytes_sent = ?, bytes_recv = ?, client_ip = ?
         WHERE id = ?
       `).run(peer.transferRx, peer.transferTx, peer.endpoint || '', existing.id);
 
-      // Update user totals
       db.prepare('UPDATE vpn_users SET last_handshake = CURRENT_TIMESTAMP, total_bytes_sent = ?, total_bytes_recv = ? WHERE id = ?')
         .run(peer.transferTx, peer.transferRx, user.id);
-    } else if (!isActive && existing) {
-      // Session ended
+    } else if (!isActive && existing && (now - peer.latestHandshake) > 300) {
       db.prepare(`
-        INSERT INTO sessions_log (username, protocol, client_ip, assigned_ip, connected_at, disconnected_at, bytes_sent, bytes_recv, disconnect_reason)
-        VALUES (?, 'wireguard', ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'timeout')
+        INSERT INTO sessions_log (username, client_ip, assigned_ip, connected_at, disconnected_at, bytes_sent, bytes_recv, disconnect_reason)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'timeout')
       `).run(user.username, existing.client_ip, existing.assigned_ip, existing.connected_at, existing.bytes_sent, existing.bytes_recv);
       db.prepare('DELETE FROM active_sessions WHERE id = ?').run(existing.id);
-      logger.info(`Session ended: ${user.username} via WireGuard (timeout)`);
+      logger.info(`Session ended: ${user.username} (timeout)`);
     }
   }
 }
 
-module.exports = { initServer, start, stop, restart, addPeer, removePeer, getPeers, monitorPeers, isInstalled };
+module.exports = { initServer, writeConfig, start, stop, restart, addPeer, removePeer, getPeers, monitorPeers, isInstalled };

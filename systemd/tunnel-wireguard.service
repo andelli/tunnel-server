@@ -1,6 +1,6 @@
 [Unit]
-Description=Tunnel VPN Gateway - WireGuard
-After=network.target network-online.target tunnel-dashboard.service
+Description=WireGuard Tunnel Server - WireGuard Interface
+After=network.target network-online.target
 Wants=network-online.target
 PartOf=tunnel.target
 

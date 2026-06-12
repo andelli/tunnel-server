@@ -1,5 +1,5 @@
 [Unit]
-Description=Tunnel VPN Gateway - All Services (Dashboard + WireGuard + OpenVPN + L2TP/IPsec)
+Description=WireGuard Tunnel Server - All Services (Dashboard + WireGuard)
 After=network.target network-online.target
 Wants=network-online.target
 

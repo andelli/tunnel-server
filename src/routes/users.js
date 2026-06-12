@@ -4,8 +4,6 @@ const { getDb } = require('../db/database');
 const logger = require('../utils/logger');
 const { generateWireGuardKeyPair, generatePresharedKey, getNextIp, generatePassword } = require('../utils/crypto');
 const wgService = require('../services/wireguard');
-const ovpnService = require('../services/openvpn');
-const l2tpService = require('../services/l2tp');
 
 const router = express.Router();
 
@@ -14,18 +12,13 @@ router.get('/', (req, res) => {
   const db = getDb();
   const users = db.prepare('SELECT * FROM vpn_users ORDER BY created_at DESC').all();
 
-  // Get active session counts per user
   const activeCounts = db.prepare(`
-    SELECT username, COUNT(*) as count, GROUP_CONCAT(protocol) as protocols
-    FROM active_sessions GROUP BY username
+    SELECT username, COUNT(*) as count FROM active_sessions GROUP BY username
   `).all();
   const activeMap = {};
-  activeCounts.forEach(a => { activeMap[a.username] = a; });
+  activeCounts.forEach(a => { activeMap[a.username] = a.count; });
 
-  users.forEach(u => {
-    u.activeCount = activeMap[u.username]?.count || 0;
-    u.activeProtocols = activeMap[u.username]?.protocols || '';
-  });
+  users.forEach(u => { u.activeCount = activeMap[u.username] || 0; });
 
   res.render('users', { users });
 });
@@ -36,8 +29,8 @@ router.get('/new', (req, res) => {
 });
 
 // Create user
-router.post('/', async (req, res) => {
-  const { username, password, notes, wg_enabled, ovpn_enabled, l2tp_enabled } = req.body;
+router.post('/', (req, res) => {
+  const { username, password, notes } = req.body;
   if (!username) {
     return res.render('user-form', { user: null, error: 'Username is required' });
   }
@@ -57,26 +50,16 @@ router.post('/', async (req, res) => {
   const wgPsk = generatePresharedKey();
 
   const result = db.prepare(`
-    INSERT INTO vpn_users (username, password, notes, wg_enabled, ovpn_enabled, l2tp_enabled,
-      wg_private_key, wg_public_key, wg_preshared_key, wg_address)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    username, userPassword, notes || null,
-    wg_enabled !== undefined ? 1 : 1,
-    ovpn_enabled !== undefined ? 1 : 1,
-    l2tp_enabled !== undefined ? 1 : 1,
-    wgKeys.privateKey, wgKeys.publicKey, wgPsk, wgIp
-  );
+    INSERT INTO vpn_users (username, password, notes, wg_private_key, wg_public_key, wg_preshared_key, wg_address)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(username, userPassword, notes || null, wgKeys.privateKey, wgKeys.publicKey, wgPsk, wgIp);
 
   logger.info(`VPN user created: ${username}`, { id: result.lastInsertRowid, ip: wgIp });
 
-  // Apply to VPN services
   try {
-    if (wg_enabled !== '0') wgService.addPeer(username, wgKeys.publicKey, wgPsk, wgIp);
-    if (ovpn_enabled !== '0') ovpnService.addClient(username, wgIp);
-    if (l2tp_enabled !== '0') l2tpService.addUser(username, userPassword);
+    wgService.addPeer(username, wgKeys.publicKey, wgPsk, wgIp);
   } catch (e) {
-    logger.error(`Failed to apply services for ${username}: ${e.message}`);
+    logger.error(`Failed to add WireGuard peer ${username}: ${e.message}`);
   }
 
   res.redirect('/users');
@@ -96,34 +79,22 @@ router.post('/:id', (req, res) => {
   const user = db.prepare('SELECT * FROM vpn_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).send('User not found');
 
-  const { password, notes, enabled, wg_enabled, ovpn_enabled, l2tp_enabled } = req.body;
-  let updates = [];
-  let params = [];
+  const { password, notes, enabled } = req.body;
 
-  if (password) {
-    updates.push('password = ?');
-    params.push(password);
-  }
-  if (notes !== undefined) { updates.push('notes = ?'); params.push(notes); }
-  updates.push('enabled = ?'); params.push(enabled !== undefined ? (enabled === '0' ? 0 : 1) : 1);
-  updates.push('wg_enabled = ?'); params.push(wg_enabled !== undefined ? (wg_enabled === '0' ? 0 : 1) : 1);
-  updates.push('ovpn_enabled = ?'); params.push(ovpn_enabled !== undefined ? (ovpn_enabled === '0' ? 0 : 1) : 1);
-  updates.push('l2tp_enabled = ?'); params.push(l2tp_enabled !== undefined ? (l2tp_enabled === '0' ? 0 : 1) : 1);
-  updates.push('updated_at = CURRENT_TIMESTAMP');
+  db.prepare(`
+    UPDATE vpn_users SET password = COALESCE(NULLIF(?, ''), password),
+      notes = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(password || null, notes || null, enabled !== '0' ? 1 : 0, req.params.id);
 
-  params.push(req.params.id);
-
-  db.prepare(`UPDATE vpn_users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-
-  // Re-apply VPN service configs
   try {
-    if (wg_enabled !== '0') wgService.addPeer(user.username, user.wg_public_key, user.wg_preshared_key, user.wg_address);
-    else wgService.removePeer(user.username, user.wg_public_key);
-
-    if (l2tp_enabled !== '0') l2tpService.addUser(user.username, password || user.password);
-    else l2tpService.removeUser(user.username);
+    if (enabled !== '0') {
+      wgService.addPeer(user.username, user.wg_public_key, user.wg_preshared_key, user.wg_address);
+    } else {
+      wgService.removePeer(user.username, user.wg_public_key);
+    }
   } catch (e) {
-    logger.error(`Failed to update services for ${user.username}: ${e.message}`);
+    logger.error(`Failed to update WireGuard peer ${user.username}: ${e.message}`);
   }
 
   logger.info(`VPN user updated: ${user.username}`);
@@ -140,11 +111,8 @@ router.post('/:id/toggle', (req, res) => {
   db.prepare('UPDATE vpn_users SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newStatus, req.params.id);
 
   try {
-    if (newStatus) {
-      if (user.wg_enabled) wgService.addPeer(user.username, user.wg_public_key, user.wg_preshared_key, user.wg_address);
-    } else {
-      if (user.wg_public_key) wgService.removePeer(user.username, user.wg_public_key);
-    }
+    if (newStatus) wgService.addPeer(user.username, user.wg_public_key, user.wg_preshared_key, user.wg_address);
+    else wgService.removePeer(user.username, user.wg_public_key);
   } catch (e) {
     logger.error(`Toggle failed for ${user.username}: ${e.message}`);
   }
@@ -161,8 +129,6 @@ router.post('/:id/delete', (req, res) => {
 
   try {
     if (user.wg_public_key) wgService.removePeer(user.username, user.wg_public_key);
-    if (user.ovpn_enabled) ovpnService.removeClient(user.username);
-    if (user.l2tp_enabled) l2tpService.removeUser(user.username);
   } catch (e) {
     logger.error(`Cleanup failed for ${user.username}: ${e.message}`);
   }
@@ -176,70 +142,6 @@ router.post('/:id/delete', (req, res) => {
 
 // Download config
 router.get('/:id/config', (req, res) => {
-  const db = getDb();
-  const user = db.prepare('SELECT * FROM vpn_users WHERE id = ?').get(req.params.id);
-  if (!user) return res.status(404).send('User not found');
-
-  const protocol = req.query.protocol || 'wireguard';
-  const svrPubKey = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_server_public_key'").get()?.value || '';
-  const svrAddress = db.prepare("SELECT value FROM server_settings WHERE key = 'server_public_ip'").get()?.value || req.hostname;
-  const wgPort = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_port'").get()?.value || '51820';
-  const dns = db.prepare("SELECT value FROM server_settings WHERE key = 'dns_servers'").get()?.value || '8.8.8.8';
-
-  if (protocol === 'wireguard') {
-    const config = `[Interface]
-PrivateKey = ${user.wg_private_key}
-Address = ${user.wg_address}/32
-DNS = ${dns}
-
-[Peer]
-PublicKey = ${svrPubKey}
-PresharedKey = ${user.wg_preshared_key}
-Endpoint = ${svrAddress}:${wgPort}
-AllowedIPs = 0.0.0.0/0
-PersistentKeepalive = 25
-`;
-    res.setHeader('Content-Type', 'application/x-wireguard-config');
-    res.setHeader('Content-Disposition', `attachment; filename="${user.username}.conf"`);
-    return res.send(config);
-  }
-
-  if (protocol === 'openvpn') {
-    const caCert = db.prepare("SELECT value FROM server_settings WHERE key = 'ovpn_ca_cert'").get()?.value || '';
-    const ovpnPort = db.prepare("SELECT value FROM server_settings WHERE key = 'ovpn_port'").get()?.value || '1194';
-    const ovpnProto = db.prepare("SELECT value FROM server_settings WHERE key = 'ovpn_proto'").get()?.value || 'udp';
-    const config = `client
-dev tun
-proto ${ovpnProto}
-remote ${svrAddress} ${ovpnPort}
-resolv-retry infinite
-nobind
-persist-key
-persist-tun
-remote-cert-tls server
-cipher AES-256-GCM
-auth SHA256
-verb 3
-<ca>
-${caCert}
-</ca>
-<cert>
-${user.ovpn_cert_serial || ''}
-</cert>
-<key>
-${user.ovpn_cert_serial || ''}
-</key>
-`;
-    res.setHeader('Content-Type', 'application/x-openvpn-config');
-    res.setHeader('Content-Disposition', `attachment; filename="${user.username}.ovpn"`);
-    return res.send(config);
-  }
-
-  res.status(400).send('Unsupported protocol');
-});
-
-// Generate QR code for WireGuard
-router.get('/:id/qr', async (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM vpn_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).send('User not found');
@@ -262,11 +164,50 @@ AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 `;
 
+  res.setHeader('Content-Type', 'application/x-wireguard-config');
+  res.setHeader('Content-Disposition', `attachment; filename="${user.username}.conf"`);
+  res.send(config);
+});
+
+// QR Code for WireGuard
+router.get('/:id/qr', async (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM vpn_users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).send('User not found');
+
+  const svrPubKey = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_server_public_key'").get()?.value || '';
+  const svrAddress = db.prepare("SELECT value FROM server_settings WHERE key = 'server_public_ip'").get()?.value || req.hostname;
+  const wgPort = db.prepare("SELECT value FROM server_settings WHERE key = 'wg_port'").get()?.value || '51820';
+  const dns = db.prepare("SELECT value FROM server_settings WHERE key = 'dns_servers'").get()?.value || '8.8.8.8';
+
+  const wgConfig = `[Interface]
+PrivateKey = ${user.wg_private_key}
+Address = ${user.wg_address}/32
+DNS = ${dns}
+
+[Peer]
+PublicKey = ${svrPubKey}
+PresharedKey = ${user.wg_preshared_key}
+Endpoint = ${svrAddress}:${wgPort}
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+`;
+
   const QRCode = require('qrcode');
-  const qrDataUrl = await QRCode.toDataURL(config, { width: 400, margin: 2 });
-  res.send(`<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#1a1a2e">
-    <img src="${qrDataUrl}" style="border-radius:12px;box-shadow:0 0 40px rgba(0,0,0,0.5)"/>
-  </body></html>`);
+  const qrDataUrl = await QRCode.toDataURL(wgConfig, { width: 400, margin: 2 });
+
+  res.send(`<!DOCTYPE html><html><head><title>WireGuard QR - ${user.username}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;
+background:#0f0f1a;font-family:sans-serif;flex-direction:column;gap:20px}
+h2{color:#e0e0e0;margin:0}img{border-radius:12px;box-shadow:0 0 40px rgba(0,0,0,0.5)}
+p{color:#8899aa;font-size:0.85rem}
+</style></head><body>
+<h2>${user.username}</h2>
+<img src="${qrDataUrl}" alt="WireGuard QR"/>
+<p>Scan with WireGuard mobile app</p>
+</body></html>`);
 });
 
 module.exports = router;
