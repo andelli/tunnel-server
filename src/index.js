@@ -57,14 +57,6 @@ try {
 app.use(session(sessionConfig));
 app.use(csrfToken);
 
-const loginLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  message: { error: 'Too many login attempts.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 // Routes
 app.use('/', require('./routes/auth'));
 app.use('/', requireAuth, require('./routes/dashboard'));
