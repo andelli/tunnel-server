@@ -1,16 +1,25 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db/database');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 router.get('/login', (req, res) => {
   if (req.session?.userId) return res.redirect('/');
   res.render('login', { layout: false, error: null });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.render('login', { layout: false, error: 'Username and password required' });
@@ -20,12 +29,12 @@ router.post('/login', (req, res) => {
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
   if (!user) {
     logger.warn(`Login failed: user ${username} not found`);
-    return res.render('login', { error: 'Invalid credentials' });
+    return res.render('login', { layout: false, error: 'Invalid credentials' });
   }
 
   if (!bcrypt.compareSync(password, user.password)) {
     logger.warn(`Login failed: wrong password for ${username}`);
-    return res.render('login', { error: 'Invalid credentials' });
+    return res.render('login', { layout: false, error: 'Invalid credentials' });
   }
 
   req.session.userId = user.id;

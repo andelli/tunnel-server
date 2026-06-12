@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const path = require('path');
 const expressLayouts = require('express-ejs-layouts');
@@ -67,7 +66,7 @@ const loginLimiter = rateLimit({
 });
 
 // Routes
-app.use('/', loginLimiter, require('./routes/auth'));
+app.use('/', require('./routes/auth'));
 app.use('/', requireAuth, require('./routes/dashboard'));
 app.use('/users', requireAuth, require('./routes/users'));
 app.use('/configs', requireAuth, csrfProtect, require('./routes/configs'));

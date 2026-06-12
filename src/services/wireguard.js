@@ -105,7 +105,11 @@ function restart() {
 function addPeer(username, publicKey, presharedKey, address) {
   if (!isInstalled() || !publicKey || !address) return;
   try {
-    execSync(`wg set ${WG_IFACE} peer ${publicKey} preshared-key <(echo "${presharedKey}") allowed-ips ${address}/32`, { encoding: 'utf8', timeout: 5000 });
+    // Write preshared key to temp file (process substitution not supported by /bin/sh)
+    const tmpFile = `/tmp/wg-psk-${username}`;
+    fs.writeFileSync(tmpFile, presharedKey);
+    execSync(`wg set ${WG_IFACE} peer ${publicKey} preshared-key ${tmpFile} allowed-ips ${address}/32`, { encoding: 'utf8', timeout: 5000 });
+    fs.unlinkSync(tmpFile);
     logger.info(`WireGuard peer added: ${username} (${address})`);
   } catch (e) {
     logger.warn(`WireGuard add peer (${username}) failed: ${e.message}`);
