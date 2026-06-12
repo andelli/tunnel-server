@@ -1,13 +1,15 @@
 [Unit]
 Description=Tunnel VPN Gateway - WireGuard
-After=network.target network-online.target
+After=network.target network-online.target tunnel-dashboard.service
 Wants=network-online.target
-Before=tunnel-dashboard.service
+PartOf=tunnel.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 User=root
+ExecStartPre=/bin/sh -c 'wg-quick down wg0 2>/dev/null || true'
+ExecStartPre=/usr/bin/node /opt/tunnel-server/src/services/gen-wireguard-config.js
 ExecStart=/usr/bin/wg-quick up wg0
 ExecStop=/usr/bin/wg-quick down wg0
 
