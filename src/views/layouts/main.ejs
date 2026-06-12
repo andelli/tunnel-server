@@ -21,7 +21,10 @@
     </ul>
     <div class="sidebar-footer">
       <span class="user-info"><%= session?.username || '' %></span>
-      <a href="/logout" class="btn-logout">Logout</a>
+      <div style="display:flex;gap:8px;font-size:0.8rem">
+        <a href="/change-password" style="color:var(--text-muted);text-decoration:none">Ganti PW</a>
+        <a href="/logout" class="btn-logout">Logout</a>
+      </div>
     </div>
   </nav>
 

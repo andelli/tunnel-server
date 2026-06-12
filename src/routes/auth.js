@@ -54,4 +54,37 @@ router.get('/logout', (req, res) => {
   });
 });
 
+// Change password
+router.get('/change-password', (req, res) => {
+  if (!req.session?.userId) return res.redirect('/login');
+  res.render('change-password', { error: null, success: null });
+});
+
+router.post('/change-password', (req, res) => {
+  if (!req.session?.userId) return res.redirect('/login');
+
+  const { current_password, new_password, confirm_password } = req.body;
+  if (!current_password || !new_password || !confirm_password) {
+    return res.render('change-password', { error: 'All fields required', success: null });
+  }
+  if (new_password.length < 6) {
+    return res.render('change-password', { error: 'Password minimal 6 karakter', success: null });
+  }
+  if (new_password !== confirm_password) {
+    return res.render('change-password', { error: 'Password baru tidak cocok', success: null });
+  }
+
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.session.userId);
+  if (!user || !bcrypt.compareSync(current_password, user.password)) {
+    return res.render('change-password', { error: 'Password saat ini salah', success: null });
+  }
+
+  const hash = bcrypt.hashSync(new_password, 12);
+  db.prepare('UPDATE admin_users SET password = ? WHERE id = ?').run(hash, req.session.userId);
+
+  logger.info(`Admin ${req.session.username} changed password`);
+  res.render('change-password', { error: null, success: 'Password berhasil diubah!' });
+});
+
 module.exports = router;

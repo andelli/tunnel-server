@@ -1,44 +1,53 @@
 <% activePage = 'logs' %>
 <div class="page-header">
-  <h2>Event Logs</h2>
+  <h2>VPN Session Logs</h2>
   <div class="header-actions">
     <a href="/logs" class="btn">🔄 Refresh</a>
   </div>
 </div>
 
 <div class="card">
-  <div class="log-filters">
-    <a href="/logs" class="btn-sm <%= !category ? 'active' : '' %>">All</a>
-    <a href="/logs?category=info" class="btn-sm <%= category === 'info' ? 'active' : '' %>">Info</a>
-    <a href="/logs?category=warn" class="btn-sm <%= category === 'warn' ? 'active' : '' %>">Warning</a>
-    <a href="/logs?category=error" class="btn-sm <%= category === 'error' ? 'active' : '' %>">Error</a>
-  </div>
-
-  <table class="table table-logs">
+  <table class="table">
     <thead>
       <tr>
         <th>Time</th>
-        <th>Level</th>
-        <th>Message</th>
+        <th>User</th>
+        <th>Client IP</th>
+        <th>Assigned IP</th>
+        <th>Duration</th>
+        <th>⬆ Sent</th>
+        <th>⬇ Received</th>
+        <th>Reason</th>
       </tr>
     </thead>
     <tbody>
       <% if (logs.length === 0) { %>
-        <tr><td colspan="3" class="text-muted">No logs found</td></tr>
+        <tr><td colspan="8" class="text-muted">No session logs yet</td></tr>
       <% } %>
       <% logs.forEach(l => { %>
-        <tr class="log-<%= l.level %>">
-          <td class="log-time"><%= l.timestamp %></td>
-          <td><span class="badge badge-<%= l.level %>"><%= l.level %></span></td>
-          <td><%= l.message %></td>
+        <tr>
+          <td class="log-time"><%= l.connected_at %></td>
+          <td><strong><%= l.username %></strong></td>
+          <td><%= l.client_ip || '-' %></td>
+          <td><code><%= l.assigned_ip || '-' %></code></td>
+          <td>
+            <% if (l.disconnected_at) { %>
+              <%= Math.round((new Date(l.disconnected_at) - new Date(l.connected_at)) / 60000) %> min
+            <% } else { %>
+              -
+            <% } %>
+          </td>
+          <td><%= (l.bytes_sent / 1024 / 1024).toFixed(2) %> MB</td>
+          <td><%= (l.bytes_recv / 1024 / 1024).toFixed(2) %> MB</td>
+          <td><%= l.disconnect_reason || 'completed' %></td>
         </tr>
       <% }) %>
     </tbody>
   </table>
 
   <div class="pagination">
-    <% if (page > 1) { %><a href="/logs?page=<%= page - 1 %><%= category ? '&category=' + category : '' %>" class="btn-sm">← Prev</a><% } %>
+    <% if (page > 1) { %><a href="/logs?page=<%= page - 1 %>" class="btn-sm">← Prev</a><% } %>
     <span>Page <%= page %> of <%= totalPages %> (<%= totalLogs %> total)</span>
-    <% if (page < totalPages) { %><a href="/logs?page=<%= page + 1 %><%= category ? '&category=' + category : '' %>" class="btn-sm">Next →</a><% } %>
+    <% if (page < totalPages) { %><a href="/logs?page=<%= page + 1 %>" class="btn-sm">Next →</a><% } %>
   </div>
 </div>
