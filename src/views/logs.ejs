@@ -1,0 +1,54 @@
+<% activePage = 'logs' %>
+<div class="page-header">
+  <h2>Event Logs</h2>
+  <div class="header-actions">
+    <a href="/logs?category=<%= category || '' %>" class="btn" onclick="location.reload()">🔄 Refresh</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="log-filters">
+    <a href="/logs" class="btn-sm <%= !category ? 'active' : '' %>">All</a>
+    <a href="/logs?category=system" class="btn-sm <%= category === 'system' ? 'active' : '' %>">System</a>
+    <a href="/logs?category=auth" class="btn-sm <%= category === 'auth' ? 'active' : '' %>">Auth</a>
+    <a href="/logs?category=vpn" class="btn-sm <%= category === 'vpn' ? 'active' : '' %>">VPN</a>
+    <a href="/logs?category=user" class="btn-sm <%= category === 'user' ? 'active' : '' %>">User</a>
+  </div>
+
+  <table class="table table-logs">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Level</th>
+        <th>Category</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (logs.length === 0) { %>
+        <tr><td colspan="4" class="text-muted">No logs found</td></tr>
+      <% } %>
+      <% logs.forEach(l => { %>
+        <tr class="log-<%= l.level %>">
+          <td class="log-time"><%= l.timestamp %></td>
+          <td><span class="badge badge-<%= l.level %>"><%= l.level %></span></td>
+          <td><%= l.category %></td>
+          <td><%= l.message %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <div class="pagination">
+    <% if (page > 1) { %><a href="/logs?page=<%= page - 1 %><%= category ? '&category=' + category : '' %>" class="btn-sm">← Prev</a><% } %>
+    <span>Page <%= page %> of <%= totalPages %> (<%= totalLogs %> total)</span>
+    <% if (page < totalPages) { %><a href="/logs?page=<%= page + 1 %><%= category ? '&category=' + category : '' %>" class="btn-sm">Next →</a><% } %>
+  </div>
+</div>
+
+<% if (fileLogs.length > 0) { %>
+<div class="card">
+  <h3>File Logs (Recent)</h3>
+  <pre class="log-output"><%= fileLogs.slice(0, 20).join('\n') %></pre>
+</div>
+<% } %>

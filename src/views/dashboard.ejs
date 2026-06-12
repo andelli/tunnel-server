@@ -1,0 +1,78 @@
+<% activePage = 'dashboard' %>
+<div class="page-header">
+  <h2>Dashboard</h2>
+  <div class="header-actions">
+    <a href="/users/new" class="btn btn-primary">+ Add User</a>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value" id="stat-total-users"><%= stats.totalUsers %></div>
+    <div class="stat-label">Total Users</div>
+  </div>
+  <div class="stat-card stat-active">
+    <div class="stat-value" id="stat-active-users"><%= stats.activeUsers %></div>
+    <div class="stat-label">Online Now</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="stat-enabled-users"><%= stats.enabledUsers %></div>
+    <div class="stat-label">Enabled</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="stat-bandwidth"><%= (stats.total_sent / 1024 / 1024).toFixed(1) %> MB</div>
+    <div class="stat-label">Bandwidth (All Time)</div>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="card">
+    <h3>Protocol Distribution</h3>
+    <div class="protocol-list">
+      <% if (protocols.length === 0) { %>
+        <p class="text-muted">No active sessions</p>
+      <% } %>
+      <% protocols.forEach(p => { %>
+        <div class="protocol-item">
+          <span class="protocol-name"><%= p.protocol %></span>
+          <span class="protocol-count"><%= p.count %> online</span>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Quick Actions</h3>
+    <div class="quick-actions">
+      <a href="/users/new" class="action-btn">➕ New User</a>
+      <a href="/sessions" class="action-btn">🔌 Active Sessions</a>
+      <a href="/configs" class="action-btn">⚙️ Settings</a>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent Events</h3>
+  <div class="events-list">
+    <% if (recentEvents.length === 0) { %>
+      <p class="text-muted">No events yet</p>
+    <% } %>
+    <% recentEvents.forEach(e => { %>
+      <div class="event-item">
+        <span class="event-time"><%= e.timestamp %></span>
+        <span class="event-level event-<%= e.level %>"><%= e.level %></span>
+        <span class="event-category"><%= e.category %></span>
+        <span class="event-msg"><%= e.message %></span>
+      </div>
+    <% }) %>
+  </div>
+</div>
+
+<div class="card">
+  <h3>VPN Services Status</h3>
+  <div class="service-status" id="service-status">
+    <div class="service-item"><span>WireGuard</span><span class="status-check">...</span></div>
+    <div class="service-item"><span>OpenVPN</span><span class="status-check">...</span></div>
+    <div class="service-item"><span>L2TP/IPsec</span><span class="status-check">...</span></div>
+  </div>
+</div>

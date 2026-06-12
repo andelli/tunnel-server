@@ -1,0 +1,58 @@
+<% activePage = 'users' %>
+<div class="page-header">
+  <h2>VPN Users</h2>
+  <a href="/users/new" class="btn btn-primary">+ Add User</a>
+</div>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>IP Address</th>
+        <th>Protocols</th>
+        <th>Status</th>
+        <th>Online</th>
+        <th>Last Handshake</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (users.length === 0) { %>
+        <tr><td colspan="7" class="text-center text-muted">No users yet. <a href="/users/new">Add one</a></td></tr>
+      <% } %>
+      <% users.forEach(u => { %>
+        <tr>
+          <td><strong><%= u.username %></strong></td>
+          <td><code><%= u.wg_address || '-' %></code></td>
+          <td>
+            <span class="proto-badge wg <%= u.wg_enabled ? 'enabled' : 'disabled' %>">WG</span>
+            <span class="proto-badge ovpn <%= u.ovpn_enabled ? 'enabled' : 'disabled' %>">OVPN</span>
+            <span class="proto-badge l2tp <%= u.l2tp_enabled ? 'enabled' : 'disabled' %>">L2TP</span>
+          </td>
+          <td>
+            <span class="status-dot <%= u.enabled ? 'green' : 'red' %>"></span>
+            <%= u.enabled ? 'Active' : 'Disabled' %>
+          </td>
+          <td><%= u.activeCount > 0 ? `🟢 ${u.activeCount}` : '⚪ 0' %></td>
+          <td><%= u.last_handshake || '-' %></td>
+          <td class="actions-cell">
+            <a href="/users/<%= u.id %>/edit" class="btn-sm">Edit</a>
+            <a href="/users/<%= u.id %>/config?protocol=wireguard" class="btn-sm" download>Config</a>
+            <a href="/users/<%= u.id %>/qr" class="btn-sm" target="_blank">QR</a>
+            <form method="POST" action="/users/<%= u.id %>/toggle" style="display:inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn-sm <%= u.enabled ? 'btn-warning' : 'btn-success' %>">
+                <%= u.enabled ? 'Disable' : 'Enable' %>
+              </button>
+            </form>
+            <form method="POST" action="/users/<%= u.id %>/delete" style="display:inline" onsubmit="return confirm('Delete user <%= u.username %>?')">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn-sm btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
