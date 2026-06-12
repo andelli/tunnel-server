@@ -1,0 +1,17 @@
+[Unit]
+Description=Tunnel VPN Gateway - strongSwan IPsec (L2TP)
+After=network.target network-online.target
+Wants=network-online.target
+Before=tunnel-dashboard.service
+
+[Service]
+Type=forking
+User=root
+ExecStartPre=/usr/sbin/ipsec stop
+ExecStart=/usr/sbin/ipsec start
+ExecStop=/usr/sbin/ipsec stop
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

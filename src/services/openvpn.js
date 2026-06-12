@@ -76,11 +76,14 @@ function initServer() {
   db.prepare("INSERT OR REPLACE INTO server_settings (key, value) VALUES ('ovpn_port', ?)").run(String(config.vpn.openvpn.port));
   db.prepare("INSERT OR REPLACE INTO server_settings (key, value) VALUES ('ovpn_proto', ?)").run(config.vpn.openvpn.proto);
 
-  // Write server.conf
+  // Write server.conf — all under project dir per systemd config
   const mainIface = network.getMainInterface();
   const svrSubnet = config.vpn.openvpn.subnet;
   const svrIp = svrSubnet.split('/')[0].replace(/\.\d+$/, '.0');
   const svrMask = svrSubnet.includes('/24') ? '255.255.255.0' : '255.255.255.0';
+
+  const projectOvpnDir = path.join(config.paths.configs, 'openvpn');
+  if (!fs.existsSync(projectOvpnDir)) fs.mkdirSync(projectOvpnDir, { recursive: true });
 
   const conf = `port ${config.vpn.openvpn.port}
 proto ${config.vpn.openvpn.proto}
@@ -90,7 +93,7 @@ cert ${OVPN_SERVER_DIR}/server.crt
 key ${OVPN_SERVER_DIR}/server.key
 dh ${OVPN_SERVER_DIR}/dh.pem
 server ${svrIp} ${svrMask}
-ifconfig-pool-persist ${OVPN_DIR}/ipp.txt
+ifconfig-pool-persist ${projectOvpnDir}/ipp.txt
 client-config-dir ${OVPN_CCD_DIR}
 push "redirect-gateway def1 bypass-dhcp"
 push "dhcp-option DNS ${config.vpn.dns[0]}"
@@ -103,13 +106,13 @@ user nobody
 group nogroup
 persist-key
 persist-tun
-status ${OVPN_DIR}/status.log 5
-log-append ${OVPN_DIR}/openvpn.log
+status ${projectOvpnDir}/status.log 5
+log-append ${projectOvpnDir}/openvpn.log
 verb 3
 explicit-exit-notify 1
 `;
 
-  fs.writeFileSync(path.join(OVPN_DIR, 'server.conf'), conf);
+  fs.writeFileSync(path.join(OVPN_CONFIG_DIR, 'server.conf'), conf);
   logger.info('OpenVPN server.conf written');
 
   return true;
@@ -118,7 +121,7 @@ explicit-exit-notify 1
 function start() {
   if (!isInstalled()) return;
   try {
-    execSync('systemctl start openvpn@server 2>/dev/null || openvpn --daemon --config /etc/openvpn/server.conf', { encoding: 'utf8', timeout: 10000 });
+    execSync('systemctl start tunnel-openvpn 2>/dev/null || openvpn --daemon --config /opt/tunnel-server/configs/openvpn/server.conf', { encoding: 'utf8', timeout: 10000 });
     logger.info('OpenVPN started');
   } catch (e) {
     logger.error(`Failed to start OpenVPN: ${e.message}`);
@@ -128,7 +131,7 @@ function start() {
 function stop() {
   if (!isInstalled()) return;
   try {
-    execSync('systemctl stop openvpn@server 2>/dev/null; pkill openvpn 2>/dev/null', { encoding: 'utf8', timeout: 10000 });
+    execSync('systemctl stop tunnel-openvpn 2>/dev/null; pkill openvpn 2>/dev/null', { encoding: 'utf8', timeout: 10000 });
     logger.info('OpenVPN stopped');
   } catch {}
 }

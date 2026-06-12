@@ -1,14 +1,13 @@
 #!/bin/bash
-# Tunnel Server - Full Install Script
+# Tunnel VPN Gateway — Full Install
 # Run as root: sudo bash install.sh
 
 set -e
 
 echo "================================================"
-echo "  Tunnel VPN Gateway Server - Installer"
+echo "  Tunnel VPN Gateway Server — Installer"
 echo "================================================"
 
-# Check root
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root: sudo bash install.sh"
   exit 1
@@ -18,129 +17,114 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "[1/8] Installing system packages..."
-apt-get update
-apt-get install -y wireguard-tools openvpn easy-rsa strongswan xl2tpd ppp \
-  iptables-persistent net-tools curl
+apt-get update -qq
+apt-get install -y -qq wireguard-tools openvpn easy-rsa strongswan xl2tpd ppp \
+  iptables-persistent net-tools curl qrencode 2>&1 | tail -3
 
 echo "[2/8] Enabling IP forwarding..."
-sysctl -w net.ipv4.ip_forward=1
-sysctl -w net.ipv6.conf.all.forwarding=1
-if ! grep -q "net.ipv4.ip_forward" /etc/sysctl.conf; then
-  echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-fi
-if ! grep -q "net.ipv6.conf.all.forwarding" /etc/sysctl.conf; then
-  echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
-fi
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null
+grep -q 'net.ipv4.ip_forward' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
+grep -q 'net.ipv6.conf.all.forwarding' /etc/sysctl.conf || echo 'net.ipv6.conf.all.forwarding=1' >> /etc/sysctl.conf
 
-echo "[3/8] Setting up WireGuard kernel module..."
-modprobe wireguard 2>/dev/null || echo "WireGuard module may need kernel update"
+echo "[3/8] Loading kernel modules..."
+modprobe wireguard 2>/dev/null || echo "  (wireguard module may need kernel update)"
 modprobe tun 2>/dev/null || true
 
 echo "[4/8] Installing Node.js dependencies..."
-if [ ! -d "node_modules" ]; then
-  npm install --production 2>&1 | tail -3
-fi
+npm install --production 2>&1 | tail -2
 
 echo "[5/8] Initializing EasyRSA (OpenVPN PKI)..."
-if [ ! -d "easy-rsa/pki" ]; then
-  make-cadir easy-rsa 2>/dev/null || true
+if [ ! -f easy-rsa/pki/ca.crt ]; then
+  rm -rf easy-rsa 2>/dev/null
+  make-cadir easy-rsa
   cd easy-rsa
-  ./easyrsa init-pki 2>/dev/null || true
-  EASYRSA_BATCH=1 ./easyrsa build-ca nopass 2>/dev/null || true
-  EASYRSA_BATCH=1 ./easyrsa gen-dh 2>/dev/null || true
-  EASYRSA_BATCH=1 ./easyrsa build-server-full server nopass 2>/dev/null || true
-
-  # Copy certs
-  mkdir -p "$SCRIPT_DIR/configs/openvpn/server"
-  cp pki/ca.crt "$SCRIPT_DIR/configs/openvpn/server/" 2>/dev/null || true
-  cp pki/issued/server.crt "$SCRIPT_DIR/configs/openvpn/server/" 2>/dev/null || true
-  cp pki/private/server.key "$SCRIPT_DIR/configs/openvpn/server/" 2>/dev/null || true
-  cp pki/dh.pem "$SCRIPT_DIR/configs/openvpn/server/" 2>/dev/null || true
+  ./easyrsa init-pki >/dev/null 2>&1
+  EASYRSA_BATCH=1 ./easyrsa build-ca nopass >/dev/null 2>&1
+  EASYRSA_BATCH=1 ./easyrsa gen-dh >/dev/null 2>&1
+  EASYRSA_BATCH=1 ./easyrsa build-server-full server nopass >/dev/null 2>&1
   cd "$SCRIPT_DIR"
+  echo "  EasyRSA PKI ready"
 fi
 
-echo "[6/8] Generating WireGuard server keys..."
-mkdir -p configs/wireguard
-if [ ! -f configs/wireguard/server_private.key ]; then
-  wg genkey | tee configs/wireguard/server_private.key | wg pubkey > configs/wireguard/server_public.key
-  echo "WireGuard keys generated."
-fi
+# Copy OpenVPN certs
+mkdir -p configs/openvpn/server
+cp easy-rsa/pki/ca.crt configs/openvpn/server/ 2>/dev/null || true
+cp easy-rsa/pki/issued/server.crt configs/openvpn/server/ 2>/dev/null || true
+cp easy-rsa/pki/private/server.key configs/openvpn/server/ 2>/dev/null || true
+cp easy-rsa/pki/dh.pem configs/openvpn/server/ 2>/dev/null || true
 
-echo "[7/8] Initializing database..."
+# Generate OpenVPN ta.key if missing
+[ -f configs/openvpn/server/ta.key ] || openvpn --genkey secret configs/openvpn/server/ta.key 2>/dev/null
+
+echo "[6/8] Initializing database..."
 node src/db/init.js
 
-echo "[8/8] Setting up systemd service..."
-cat > /etc/systemd/system/tunnel-dashboard.service << 'SERVICEEOF'
-[Unit]
-Description=Tunnel VPN Gateway Dashboard
-After=network.target network-online.target
-Wants=network-online.target
+echo "[7/8] Installing systemd services..."
+mkdir -p /etc/systemd/system
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/tunnel-server
-ExecStart=/usr/bin/node src/index.js
-Restart=always
-RestartSec=5
-Environment=NODE_ENV=production
-StandardOutput=journal
-StandardError=journal
+for unit in systemd/tunnel-*.service systemd/tunnel.target; do
+  name="$(basename "$unit")"
+  cp "$unit" "/etc/systemd/system/$name"
+  echo "  installed $name"
+done
 
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
-
+# Enable all services
 systemctl daemon-reload
-systemctl enable tunnel-dashboard
-systemctl start tunnel-dashboard
+systemctl enable tunnel-wireguard.service 2>/dev/null || true
+systemctl enable tunnel-openvpn.service 2>/dev/null || true
+systemctl enable tunnel-strongswan.service 2>/dev/null || true
+systemctl enable tunnel-xl2tpd.service 2>/dev/null || true
+systemctl enable tunnel-dashboard.service 2>/dev/null || true
 
-# Get server IP
-SERVER_IP=$(curl -s https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+# Start dashboard only now; user can start others
+systemctl start tunnel-dashboard.service 2>&1 || true
+
+echo "[8/8] Setup NAT rules (persistent)..."
+iptables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || \
+  iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+netfilter-persistent save 2>/dev/null || true
+
+SERVER_IP="$(curl -s https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
 
 echo ""
 echo "================================================"
-echo "  INSTALLATION COMPLETE!"
+echo "  INSTALLATION COMPLETE"
 echo "================================================"
 echo ""
-echo "  Dashboard: http://$SERVER_IP:3000"
-echo "  Login:     admin / admin123"
+echo "  Dashboard : http://$SERVER_IP:3000"
+echo "  Login     : admin / admin123"
 echo ""
-echo "  Services installed:"
-echo "    - WireGuard (UDP $SERVER_IP:51820)"
-echo "    - OpenVPN   (UDP $SERVER_IP:1194)"
-echo "    - L2TP/IPsec ($SERVER_IP:1701, PSK: TunnelServerPSK2024)"
+echo "  Service management:"
+echo "    systemctl start tunnel-wireguard.service"
+echo "    systemctl start tunnel-openvpn.service"
+echo "    systemctl start tunnel-strongswan.service"
+echo "    systemctl start tunnel-xl2tpd.service"
+echo "    systemctl {start|stop|restart} tunnel-dashboard.service"
 echo ""
-echo "  IMPORTANT: Change the default password after login!"
+echo "  All services:"
+echo "  systemctl start tunnel.target"
+echo ""
+echo "  WireGuard port :51820  |  OpenVPN port :1194"
+echo "  L2TP/IPsec PSK :TunnelServerPSK2024"
+echo ""
+echo "  >>> Change the default password immediately! <<<"
 echo "================================================"
 
-cat > "$SCRIPT_DIR/configs/wireguard/README.txt" << 'READMEEOF'
-=== WIREGUARD CONFIGURATION ===
+# Write Windows L2TP instructions
+cat > configs/l2tp/WINDOWS.txt << 'EOF'
+=== L2TP/IPsec untuk Windows ===
 
-Server public key can be found in:
-  configs/wireguard/server_public.key
-
-Client configs can be downloaded from the dashboard.
-
-To manually add a client:
-  wg set wg0 peer <client_pubkey> allowed-ips <client_ip>/32
-READMEEOF
-
-cat > "$SCRIPT_DIR/configs/l2tp/README.txt" << 'READMEEOF'
-=== L2TP/IPsec FOR WINDOWS ===
-
-Configure Windows VPN:
 1. Settings → Network & Internet → VPN
 2. Add VPN connection:
    - VPN provider: Windows (built-in)
    - Connection name: Tunnel VPN
-   - Server name or address: <server-ip>
+   - Server name/address: <SERVER_IP>
    - VPN type: L2TP/IPsec with pre-shared key
    - Pre-shared key: TunnelServerPSK2024
-   - Type of sign-in info: User name and password
-   - Username: (from dashboard)
-   - Password: (from dashboard)
-3. Save and connect
-READMEEOF
+   - User name: (dari dashboard)
+   - Password: (dari dashboard)
+3. Save → Connect
+EOF
 
-echo "Installation log written to /var/log/tunnel-install.log"
+echo "$(date) — Install complete" >> /var/log/tunnel-install.log

@@ -1,0 +1,17 @@
+[Unit]
+Description=Tunnel VPN Gateway - xl2tpd (L2TP)
+After=network.target strongswan.service
+Wants=strongswan.service
+Before=tunnel-dashboard.service
+
+[Service]
+Type=forking
+User=root
+PIDFile=/run/xl2tpd.pid
+ExecStart=/usr/sbin/xl2tpd -c /opt/tunnel-server/configs/l2tp/xl2tpd.conf -p /run/xl2tpd.pid
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

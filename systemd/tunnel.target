@@ -1,0 +1,12 @@
+[Unit]
+Description=Tunnel VPN Gateway - All Services (Dashboard + WireGuard + OpenVPN + L2TP/IPsec)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+ExecReload=/bin/true
+
+[Install]
+WantedBy=multi-user.target

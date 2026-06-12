@@ -1,0 +1,15 @@
+[Unit]
+Description=Tunnel VPN Gateway - WireGuard
+After=network.target network-online.target
+Wants=network-online.target
+Before=tunnel-dashboard.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+ExecStart=/usr/bin/wg-quick up wg0
+ExecStop=/usr/bin/wg-quick down wg0
+
+[Install]
+WantedBy=multi-user.target

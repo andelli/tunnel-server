@@ -7,13 +7,13 @@ const router = express.Router();
 
 router.get('/login', (req, res) => {
   if (req.session?.userId) return res.redirect('/');
-  res.render('login', { error: null });
+  res.render('login', { layout: false, error: null });
 });
 
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
-    return res.render('login', { error: 'Username and password required' });
+    return res.render('login', { layout: false, error: 'Username and password required' });
   }
 
   const db = getDb();

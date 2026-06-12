@@ -1,0 +1,17 @@
+[Unit]
+Description=Tunnel VPN Gateway - OpenVPN Server
+After=network.target network-online.target
+Wants=network-online.target
+Before=tunnel-dashboard.service
+
+[Service]
+Type=forking
+User=root
+PIDFile=/run/openvpn-server.pid
+ExecStart=/usr/sbin/openvpn --daemon --writepid /run/openvpn-server.pid --config /opt/tunnel-server/configs/openvpn/server.conf
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
