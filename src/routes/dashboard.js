@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { getDb } = require('../db/database');
 
 const router = express.Router();
@@ -24,9 +26,19 @@ router.get('/', (req, res) => {
     SELECT protocol, COUNT(*) as count FROM active_sessions GROUP BY protocol
   `).all();
 
-  const recentEvents = db.prepare(`
-    SELECT * FROM event_log ORDER BY id DESC LIMIT 10
-  `).all();
+  // Read recent events from log file
+  const logFile = path.join(__dirname, '../../data/logs/tunnel.log');
+  let recentEvents = [];
+  try {
+    if (fs.existsSync(logFile)) {
+      const content = fs.readFileSync(logFile, 'utf8');
+      recentEvents = content.split('\n').filter(Boolean).reverse().slice(0, 10).map(line => {
+        const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+\[(\w+)\]\s+(.+)/);
+        if (match) return { timestamp: match[1], level: match[2].toLowerCase(), category: '-', message: match[3] };
+        return { timestamp: '', level: 'info', category: '-', message: line };
+      });
+    }
+  } catch {}
 
   res.render('dashboard', { stats: { totalUsers, activeUsers, enabledUsers, ...bwStats, ...totalBw }, protocols, recentEvents });
 });
@@ -38,9 +50,8 @@ router.get('/api/stats', (req, res) => {
   const enabledUsers = db.prepare('SELECT COUNT(*) as count FROM vpn_users WHERE enabled = 1').get().count;
   const bwStats = db.prepare('SELECT COALESCE(SUM(bytes_sent), 0) as total_sent, COALESCE(SUM(bytes_recv), 0) as total_recv FROM active_sessions').get();
   const protocols = db.prepare('SELECT protocol, COUNT(*) as count FROM active_sessions GROUP BY protocol').all();
-  const recentEvents = db.prepare('SELECT * FROM event_log ORDER BY id DESC LIMIT 5').all();
 
-  res.json({ totalUsers, activeUsers, enabledUsers, ...bwStats, protocols, recentEvents });
+  res.json({ totalUsers, activeUsers, enabledUsers, ...bwStats, protocols });
 });
 
 module.exports = router;
